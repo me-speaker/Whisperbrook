@@ -1,0 +1,21 @@
+config_version=5
+
+[application]
+config/name="柳汊 · 早渡"
+config/features=PackedStringArray("4.5")
+config/use_custom_user_dir=true
+config/custom_user_dir_name="Liucha"
+run/main_scene="res://town.tscn"
+
+[display]
+window/size/viewport_width=960
+window/size/viewport_height=540
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0
+environment/defaults/default_clear_color=Color(0.13,0.22,0.20,1)
