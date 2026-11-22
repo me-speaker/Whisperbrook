@@ -19,9 +19,31 @@ var spots: Dictionary={}
 var closest:=""
 var positions: Dictionary={}
 var font: Font
+var placing:=""
+
+func site_position(site:int) -> Vector2:
+	return Vector2(121+(site%farm.YARD_COLS)*70,286+floori(float(site)/farm.YARD_COLS)*40)
 
 func bed(i: int) -> Vector2:
-	return Vector2(191+(i%3)*70,286+floori(i/3.0)*40)
+	return site_position(farm.s.plots[i].site)
+
+func set_placement(kind:String) -> void:
+	placing=kind
+	target=""
+	closest=""
+	dest=hero
+	update_spots()
+
+func update_spots() -> void:
+	spots.clear()
+	if placing!="":
+		for site in farm.YARD_SITES:
+			if farm.free_site(site): spots["site"+str(site)]=site_position(site)
+		return
+	spots=SPOTS.duplicate()
+	spots.merge(positions,true)
+	for i in farm.s.plots.size(): spots["plot"+str(i)]=bed(i)
+	for site in farm.s.chests: spots["chest"+str(site)]=site_position(site)
 
 func _ready() -> void:
 	font=ThemeDB.fallback_font
@@ -50,12 +72,10 @@ func npc_dest(id: String) -> Vector2:
 func _process(dt: float) -> void:
 	if farm==null: return
 	anim+=dt
-	spots=SPOTS.duplicate()
 	for id in BARNS:
 		if not positions.has(id): positions[id]=npc_dest(id)
 		if not paused: positions[id]=positions[id].move_toward(npc_dest(id),dt*20)
-		spots[id]=positions[id]
-	for i in 6: spots["plot"+str(i)]=bed(i)
+	update_spots()
 	walking=false
 	if not paused:
 		clock+=dt
@@ -94,13 +114,14 @@ func point(at: Vector2) -> void:
 	var pick:=""
 	var score:=1000.0
 	for id in spots:
-		var offset:=Vector2.ZERO if id.begins_with("plot") else Vector2(0,-11)
+		var ground:bool=id.begins_with("plot") or id.begins_with("site")
+		var offset:=Vector2.ZERO if ground else Vector2(0,-11)
 		var d=at.distance_to(spots[id]+offset)
-		var radius:=33 if id.begins_with("plot") else 30
+		var radius:=33 if ground else 30
 		if d<radius and d<score:
 			pick=id
 			score=d
-	if pick=="":
+	if pick=="" and placing=="":
 		if Rect2(142,106,126,94).has_point(at): pick="home"
 		elif Rect2(460,92,153,100).has_point(at): pick="shop"
 		elif Rect2(725,382,116,66).has_point(at): pick="dock"
@@ -108,6 +129,8 @@ func point(at: Vector2) -> void:
 	dest=area(at) if pick.is_empty() else area(spots[pick]+Vector2(0,10))
 
 func caption(id: String) -> String:
+	if id.begins_with("site") and placing!="": return "建"+farm.BUILD[placing].name
+	if id.begins_with("chest"): return "田头出货箱"
 	if id.begins_with("plot"):
 		var p:Dictionary=farm.s.plots[int(id.trim_prefix("plot"))]
 		if p.item=="": return "播种 · "+farm.ITEMS[farm.s.crop].name
@@ -165,37 +188,50 @@ func person(p: Vector2, coat: Color, is_hero: bool, straw: bool=false) -> void:
 func plant(i: int) -> void:
 	var p:=bed(i)
 	var cell:Dictionary=farm.s.plots[i]
-	var soil:="#715039" if cell.wet else "#996849"
+	var damp:bool=cell.wet or farm.weather(farm.s.day)=="细雨"
+	var soil:="#68594b" if damp else "#ab8564"
+	var ridge:="#84705a" if damp else "#c19670"
+	var shadow:="#584e43" if damp else "#896c51"
 	for row in 4:
 		var inset:=2 if row==0 or row==3 else 0
-		block(p.x-29+inset,p.y-8+row*5,58-2*inset,5,"71563e")
-		block(p.x-28+inset,p.y-9+row*5,56-2*inset,4,soil)
-		for speck in 4:
-			var off: int=(speck*17+row*5+i*7)%48
-			block(p.x-24+off,p.y-8+row*5,3,2,"71563f" if cell.wet else "ac8057")
+		var edge:=int((row+i)%3)
+		block(p.x-28+inset+edge,p.y-8+row*5,55-2*inset,5,shadow)
+		block(p.x-29+inset+edge,p.y-9+row*5,56-2*inset,5,soil)
+		for speck in 8:
+			var off: int=(speck*17+row*5+i*7)%49
+			var high:int=(speck*7+row)%4
+			block(p.x-24+off,p.y-8+row*5+high,2+(speck%3),1,ridge if speck%3 else shadow)
 	for j in 4:
 		var x:=p.x-19+(j%2)*30+floori(j/2.0)*4
 		var y:=p.y-4+floori(j/2.0)*10
 		if cell.item=="": continue
-		var h:=4+int(cell.age)*4
+		var h:=5+int(cell.age)*4
 		block(x,y-h,2,h,"425737")
-		block(x-4,y-h+1,5,3,"526e3c")
-		block(x+1,y-h-2,6,3,"749549")
+		block(x-4,y-h+1,5,3,"537956")
+		block(x+1,y-h-2,6,3,"81a470")
 		block(x+3,y-h-3,3,2,"acb765")
 		if cell.age>=2:
 			block(x-6,y-h-2,5,4,"799858")
 			block(x-4,y-h-3,4,2,"aec780")
 			block(x+1,y-h+3,7,3,"557f42")
 			if cell.item=="bean":
-				block(x-3,y-h+2,2,5,"d6aa56")
-				block(x+3,y-h,2,5,"f1ce79")
-			else: block(x-2,y-2,6,4,"e9d8bc")
+				block(x-4,y-h+2,3,6,"a7ae65")
+				block(x-3,y-h+3,1,4,"e0d08a")
+				block(x+3,y-h,3,5,"d5c37a")
+				block(x+3,y-h+4,2,2,"a8a361")
+				block(x-1,y-h-4,2,3,"e9dbaa")
+			else:
+				block(x-3,y-3,7,4,"ddd0b6")
+				block(x-1,y+1,3,2,"baae93")
 
 func boat() -> void:
 	var y:=424+roundf(sin(anim*1.6))
 	var x:=825.0
 	if farm.s.ferry and farm.s.day%2==0: x+=sin(anim*0.22)*14
+	draw_line(Vector2(x-27,y+9),Vector2(x+29,y+9),Color("#396b6566"),2)
 	draw_colored_polygon(PackedVector2Array([Vector2(x-39,y-2),Vector2(x-29,y+7),Vector2(x+26,y+7),Vector2(x+42,y-5),Vector2(x+24,y),Vector2(x-24,y)]),Color("#644d35"))
+	draw_line(Vector2(x-30,y+3),Vector2(x+27,y+3),Color("#a3835a"),2)
+	draw_line(Vector2(x+27,y+3),Vector2(x+39,y-4),Color("#b19770"),2)
 	for i in range(0,3+int(farm.s.boat)):
 		block(x-27+i*5,y-2,4,4,"b48a55")
 	if farm.s.boat>=8:
@@ -204,21 +240,41 @@ func boat() -> void:
 		block(x-14,y-17,31,4,"cfb27d")
 		block(x+18,y-10,3,3,"efc462")
 
+func chest(p:Vector2) -> void:
+	block(p.x-14,p.y-16,30,18,"675a48")
+	block(p.x-13,p.y-16,28,5,"c7ac7c")
+	block(p.x-12,p.y-10,26,10,"9e805d")
+	block(p.x-8,p.y-16,3,16,"786e56")
+	block(p.x+9,p.y-16,3,16,"786e56")
+	block(p.x,p.y-10,4,4,"e5c979")
+
+func survey(site:int) -> void:
+	var p:=site_position(site)
+	var hover:=Rect2(p-Vector2(32,18),Vector2(64,36)).has_point(get_local_mouse_position())
+	var ink:=Color("#36594ede") if hover else Color("#466c60b8")
+	draw_rect(Rect2(p-Vector2(29,12),Vector2(58,24)),Color("#c9e3c159") if hover else Color("#c5dabe28"))
+	for dx in [-1,1]:
+		for dy in [-1,1]:
+			var corner:=p+Vector2(dx*29,dy*12)
+			draw_line(corner,corner-Vector2(dx*8,0),ink,2)
+			draw_line(corner,corner-Vector2(0,dy*5),ink,2)
+	if hover:
+		if placing=="chest": chest(p)
+		else: draw_line(p-Vector2(12,0),p+Vector2(12,0),ink,3)
+
 func _draw() -> void:
 	if farm==null: return
 	if farm.s.sold_veg>=8:
 		for x in [483,497,512]:
 			block(x,191,13,9,"855f40")
 			block(x+1,190,11,3,"adc16c")
-	for i in 6: plant(i)
+	for i in farm.s.plots.size(): plant(i)
+	for site in farm.s.chests: chest(site_position(site))
+	if placing!="":
+		for site in farm.YARD_SITES:
+			if farm.free_site(site): survey(site)
 	boat()
-	# Shipping chest, with high plank lid and brass latch.
-	block(311,204,30,18,"554635")
-	block(312,204,28,5,"c7a16b")
-	block(313,210,26,10,"967249")
-	block(317,204,3,16,"75674e")
-	block(334,204,3,16,"75674e")
-	block(325,210,4,4,"e5c979")
+	chest(SPOTS.box)
 	var actors:Array=[{"id":"hero","p":hero}]
 	for id in positions: actors.append({"id":id,"p":positions[id]})
 	actors.sort_custom(func(a,b): return a.p.y<b.p.y)
@@ -226,7 +282,13 @@ func _draw() -> void:
 	if walking and target!="": draw_arc(dest,7,0,TAU,12,Color("#fbefad"),1)
 	if farm.s.minutes>960: draw_rect(Rect2(0,0,960,540),Color(0.65,0.34,0.17,0.11))
 	if farm.weather(farm.s.day)=="细雨":
-		draw_rect(Rect2(0,0,960,540),Color("#637d922b"))
+		draw_rect(Rect2(0,0,960,540),Color("#7f9d9c33"))
+		for i in 18:
+			var ripple:=fmod(anim*0.7+i*0.39,1.0)
+			var water:=Vector2(16+(i*137)%920,433+(i*23)%100)
+			draw_set_transform(water,0,Vector2(1,0.28))
+			draw_arc(Vector2.ZERO,2.0+8.0*ripple,0,TAU,16,Color(0.81,0.91,0.85,0.55*(1.0-ripple)),1)
+		draw_set_transform(Vector2.ZERO)
 		for i in 55:
 			var p:=Vector2(fmod(i*113+anim*35,960),fmod(i*79+anim*145,540))
 			draw_line(p,p+Vector2(-2,5),Color("#dceceb80"),1)

@@ -8,15 +8,43 @@ const ITEMS = {
 const PEOPLE = {"carpenter":"陆木匠","shop":"阿禾","fisher":"周叔"}
 const FIELDS = ["bean","turnip"]
 const SLOT = "user://farm.json"
+const YARD_COLS = 6
+# Grass parcels stop at the stones and flowers along the quay.
+const YARD_SITES = [0,1,2,3,4,5,6,7,8,9,10,11,13,14]
+# Row-major land parcels. These six retain the original beds' positions and order.
+const STARTER_SITES = [1,2,3,7,8,9]
+const BUILD = {
+	"field":{"name":"菜畦","wood":0,"minutes":20},
+	"chest":{"name":"田头出货箱","wood":2,"minutes":30}
+}
 var s: Dictionary
 
 func _init() -> void:
-	s = {"version":1,"day":1,"minutes":420,"coins":6,"bag":{"bean":0,"turnip":0,"wood":0},
+	s = {"version":2,"day":1,"minutes":420,"coins":6,"bag":{"bean":0,"turnip":0,"wood":0},
 		"box":{"bean":0,"turnip":0,"wood":0},"pantry":{"bean":0,"turnip":0,"wood":0},
 		"seeds":{"bean":3,"turnip":2},"crop":"bean","plots":[],"rules":{},"wood_day":0,
-		"boat":0,"boat_agreed":false,"sold_veg":0,"ferry":false,"log":[],"talk":{}}
-	for i in 6:
-		s.plots.append({"item":"bean" if i < 3 else "", "age":2 if i < 3 else 0,"wet":false})
+		"boat":0,"boat_agreed":false,"sold_veg":0,"ferry":false,"log":[],"talk":{},"chests":[]}
+	for i in STARTER_SITES.size():
+		s.plots.append({"site":STARTER_SITES[i],"item":"bean" if i < 3 else "", "age":2 if i < 3 else 0,"wet":false})
+
+func free_site(site:int) -> bool:
+	if site not in YARD_SITES or site in s.chests: return false
+	for plot in s.plots:
+		if plot.site==site: return false
+	return true
+
+func build(kind:String,site:int) -> String:
+	if not BUILD.has(kind) or not free_site(site): return "请在院内挑一块空草地。"
+	var cost:Dictionary=BUILD[kind]
+	if s.bag.wood<cost.wood: return "需要背篓里的 %d 份木料，可到木工棚前拾取。" % cost.wood
+	if s.minutes+cost.minutes>1199: return "天色晚了，明早再来动工吧。"
+	s.bag.wood-=cost.wood
+	later(cost.minutes)
+	if kind=="field": s.plots.append({"site":site,"item":"","age":0,"wet":weather(s.day)=="细雨"})
+	else: s.chests.append(site)
+	var message:="新菜畦已开好，可以播种了。" if kind=="field" else "田头出货箱已搭好，货物随晚船一起结算。"
+	log_line(message)
+	return message
 
 func weather(day: int) -> String:
 	return "细雨" if day % 4 == 3 else "晴"
@@ -174,8 +202,28 @@ func restore(path: String=SLOT) -> bool:
 	for candidate in [path,path+".bak"]:
 		if not FileAccess.file_exists(candidate): continue
 		var data=JSON.parse_string(FileAccess.get_file_as_string(candidate))
-		if data is Dictionary and data.get("version")==1 and data.has_all(s.keys()) and data.plots is Array and data.plots.size()==6:
+		if not data is Dictionary or not data.get("plots") is Array: continue
+		if data.get("version")==1 and data.plots.size()==STARTER_SITES.size():
+			for i in STARTER_SITES.size():
+				if data.plots[i] is Dictionary: data.plots[i]["site"]=STARTER_SITES[i]
+			data.chests=[]
+			data.version=2
+		if data.get("version")==2 and data.has_all(s.keys()) and valid_yard(data):
 			data.day=int(data.day)
 			s=data
 			return true
 	return false
+
+func valid_yard(data:Dictionary) -> bool:
+	if not data.chests is Array or data.plots.size()<STARTER_SITES.size(): return false
+	var sites:Array=data.chests.duplicate()
+	for plot in data.plots:
+		if not plot is Dictionary or not plot.has_all(["site","item","age","wet"]): return false
+		sites.append(plot.site)
+	var seen:={}
+	for site in sites:
+		if not (site is int or site is float) or site!=int(site) or int(site) not in YARD_SITES or seen.has(int(site)): return false
+		seen[int(site)]=true
+	for i in data.chests.size(): data.chests[i]=int(data.chests[i])
+	for plot in data.plots: plot.site=int(plot.site)
+	return true

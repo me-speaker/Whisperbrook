@@ -19,6 +19,7 @@ var pack:Label
 var hint:Label
 var toast:Label
 var marker:Label
+var build_button:Button
 var popup:ColorRect
 var content:VBoxContainer
 var sheet_title:Label
@@ -37,22 +38,9 @@ func _ready() -> void:
 	loaded=farm.restore(save_path)
 	title_font.font_names=PackedStringArray(["STZhongsong","SimSun","Noto Serif CJK SC"])
 	ui_font.font_names=PackedStringArray(["Microsoft YaHei UI","Microsoft YaHei","Noto Sans CJK SC"])
-	# Rasterize the whole game world onto a single pixel grid. UI stays at window resolution.
-	var screen:=SubViewportContainer.new()
-	screen.size=Vector2(960,540)
-	screen.stretch=true
-	screen.stretch_shrink=2
-	screen.texture_filter=CanvasItem.TEXTURE_FILTER_NEAREST
-	screen.mouse_filter=Control.MOUSE_FILTER_IGNORE
-	add_child(screen)
-	var pixels:=SubViewport.new()
-	pixels.size=Vector2i(480,270)
-	pixels.canvas_item_default_texture_filter=Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
-	pixels.render_target_update_mode=SubViewport.UPDATE_ALWAYS
-	screen.add_child(pixels)
-	pixels.canvas_transform=Transform2D().scaled(Vector2(0.5,0.5))
+	# Canvas-items stretch renders at window resolution in the original 960×540 world coordinates.
 	map.farm=farm
-	pixels.add_child(map)
+	add_child(map)
 	map.font=ui_font
 	map.arrived.connect(interact)
 	add_child(ai)
@@ -136,6 +124,8 @@ func make_hud() -> void:
 	r.add_child(pack)
 	hint=lab("单击目的地或物件　·　方向键移动 / E 互动",13,Color("#d4d8b6"))
 	r.add_child(hint)
+	build_button=btn("营造",construction)
+	r.add_child(build_button)
 	r.add_child(btn("行囊",bag_page))
 	toast=lab("",15,CREAM)
 	toast.add_theme_stylebox_override("normal",plate(Color("#35493df0"),Color("#c6ba8c"),4,13))
@@ -151,6 +141,8 @@ func update_hud() -> void:
 	var t:=int(farm.s.minutes)
 	clock_label.text="春末  %02d 日　%02d:%02d　%s" % [farm.s.day,t/60,t%60,farm.weather(farm.s.day)]
 	wallet.text="%d 文" % farm.s.coins
+	build_button.text="收起工具" if map.placing!="" else "营造"
+	hint.text="点标出的草地选址　·　Esc 收起" if map.placing!="" else "单击移动或操作　·　E 互动"
 	pack.text="背篓　%s　　 种袋　%s × %d" % [farm.inventory(farm.s.bag),farm.ITEMS[farm.s.crop].name,farm.s.seeds[farm.s.crop]]
 
 func _process(dt: float) -> void:
@@ -182,6 +174,7 @@ func _unhandled_input(event:InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode==KEY_ESCAPE:
 			if is_instance_valid(popup): close_sheet()
+			elif map.placing!="": map.set_placement("")
 			return
 		if is_instance_valid(popup): return
 		match event.physical_keycode:
@@ -204,6 +197,7 @@ func close_sheet() -> void:
 
 func sheet(title:String, id:String) -> void:
 	close_sheet()
+	map.set_placement("")
 	page=id
 	map.paused=true
 	popup=ColorRect.new()
@@ -257,6 +251,20 @@ func action(caption:String,fn:Callable,primary:=false) -> void:
 
 func interact(id:String) -> void:
 	if is_instance_valid(popup): return
+	if map.placing!="":
+		if id.begins_with("site"):
+			var site:=int(id.trim_prefix("site"))
+			var was_free:bool=farm.free_site(site)
+			var message:String=farm.build(map.placing,site)
+			if was_free and not farm.free_site(site):
+				sfx.note(270,0.22)
+				map.set_placement("")
+				persist()
+			notify(message)
+		return
+	if id.begins_with("chest"):
+		box_page()
+		return
 	if id.begins_with("plot"):
 		var msg:String=farm.work_plot(int(id.trim_prefix("plot")))
 		sfx.note(490,0.16)
@@ -279,6 +287,25 @@ func interact(id:String) -> void:
 func ferry_line() -> String:
 	if farm.s.boat<8: return "晴日能听见木匠的锤声。"
 	return "逢双日清晨开渡，铜铃随水声轻晃。" if farm.s.ferry else "船已下水，周叔准备逢双日开渡。"
+
+func construction() -> void:
+	if map.placing!="":
+		map.set_placement("")
+		return
+	sheet("院里营造","construction")
+	var empty:int=farm.YARD_SITES.size()-farm.s.plots.size()-farm.s.chests.size()
+	para("菜畦 %d 块　·　空草地 %d 块" % [farm.s.plots.size(),empty])
+	if empty==0:
+		para("这片院地已用满。")
+		return
+	for kind in farm.BUILD:
+		var spec:Dictionary=farm.BUILD[kind]
+		var cost:="木料 %d 份 · " % spec.wood if spec.wood else ""
+		action("%s　%s%d 分钟" % [spec.name,cost,spec.minutes],func():
+			close_sheet()
+			map.set_placement(kind)
+			notify("点一块带角标的草地，选址建"+spec.name+"。"))
+	para("田头出货箱与门前的木箱共用晚船货单。背篓中有木料 %d 份。" % farm.s.bag.wood,14)
 
 func home() -> void:
 	sheet("姨婆的农舍","home")
