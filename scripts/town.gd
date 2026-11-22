@@ -479,20 +479,98 @@ func chat(id:String, words:String) -> void:
 	persist()
 	npc_page(id)
 
+const MODEL_ROLES={"default":"全镇默认","clerk":"账房先生","shop":"阿禾","carpenter":"陆木匠","fisher":"周叔"}
+
+func model_select(captions:Array, selected:int) -> OptionButton:
+	var pick:=OptionButton.new()
+	pick.add_theme_font_override("font",ui_font)
+	for caption in captions: pick.add_item(caption)
+	if selected>=0: pick.select(selected)
+	content.add_child(pick)
+	return pick
+
+func edit_model(role:String, provider:="", reset:=false) -> void:
+	var profiles=ai.profiles
+	var active:Dictionary=profiles.profile(role)
+	var p:Dictionary=profiles.preset(provider) if reset else active
+	sheet("模型 · "+MODEL_ROLES[role],"model")
+	if role!="default":
+		para("当前沿用全镇默认" if profiles.inherits(role) else "当前使用单独配置",14)
+		if not profiles.inherits(role):
+			action("恢复全镇默认",func():
+				if profiles.inherit(role): settings_page()
+				else: para("配置文件写入失败。"))
+	para("服务商 / 接口协议",13)
+	var ids:Array=profiles.catalog.keys()
+	var labels:=[]
+	for id in ids: labels.append(profiles.catalog[id].label)
+	var provider_pick:=model_select(labels,ids.find(p.id))
+	provider_pick.item_selected.connect(func(i): edit_model(role,ids[i],true))
+	var models:Array=profiles.catalog[p.id].models
+	para("模型 ID",13)
+	var model_list:OptionButton
+	if not models.is_empty():
+		var choices:Array=models.duplicate()
+		choices.append("手动填写…")
+		model_list=model_select(choices,models.find(p.model) if p.model in models else models.size())
+	var name_:=line_input("填写模型 ID")
+	name_.text=p.model
+	if model_list:
+		model_list.item_selected.connect(func(i):
+			if i<models.size(): name_.text=models[i]
+			else: name_.grab_focus())
+		name_.text_changed.connect(func(v): model_list.select(models.find(v) if v in models else models.size()))
+	para("完整接口地址",13)
+	var url:=line_input("https://…")
+	url.text=p.endpoint
+	var key:=line_input("API 密钥 · 留空沿用该地址的凭证")
+	key.secret=true
+	var remember:=CheckBox.new()
+	remember.text="在此 Windows 账户记住密钥"
+	remember.add_theme_font_override("font",ui_font)
+	remember.add_theme_color_override("font_color",INK)
+	remember.visible=OS.get_name()=="Windows"
+	remember.button_pressed=profiles.remembered(url.text)
+	content.add_child(remember)
+	url.text_changed.connect(func(v):
+		key.clear()
+		remember.button_pressed=profiles.remembered(v.strip_edges()))
+	var auths:=["bearer","x-api-key","none"]
+	para("身份验证",13)
+	var auth:=model_select(["Bearer Token","x-api-key","无需密钥"],auths.find(p.auth))
+	var outputs:=["json","tools"]
+	para("账房拟约格式",13)
+	var output:=model_select(["JSON 文本","工具调用"],outputs.find(p.output))
+	var draft:=func(): return {"id":p.id,"endpoint":url.text.strip_edges(),"model":name_.text.strip_edges(),"auth":auths[auth.selected],"output":outputs[output.selected]}
+	var row:=HBoxContainer.new()
+	content.add_child(row)
+	var status:=para("",14)
+	var version:=epoch
+	row.add_child(btn("测试连接",func():
+		var submitted:Dictionary=draft.call()
+		status.text="正在测试 "+submitted.model+"…"
+		var result:Dictionary=await ai.probe(submitted,key.text.strip_edges(),role)
+		if version==epoch: status.text=str(result.get("error",submitted.model+" 测试通过。"))))
+	row.add_child(btn("保存并使用",func():
+		var error:String=profiles.save(role,draft.call(),key.text.strip_edges(),remember.button_pressed)
+		if error!="": status.text=error
+		else:
+			settings_page()
+			notify(MODEL_ROLES[role]+"的模型设置已保存。"),true))
+	row.add_child(btn("清除此地址密钥",func():
+		if profiles.forget(url.text.strip_edges()):
+			key.clear()
+			remember.button_pressed=false
+			status.text="已清除这个地址在柳汊保存的密钥。"
+		else: status.text="密钥未能清除。"))
+
 func settings_page() -> void:
 	sheet("来信与声音","settings")
-	para("默认连接本机转发的河湾云模型。也可填写兼容 Chat Completions 的接口。",14)
-	para("模型接口",13)
-	var url:=line_input("完整接口地址")
-	url.text=ai.endpoint
-	para("模型 ID",13)
-	var name_:=line_input("模型 ID")
-	name_.text=ai.model
-	var key:=line_input("本次游玩的 API 密钥（可留空）")
-	key.secret=true
-	action("保存模型设置",func():
-		var value:String=key.text if not key.text.is_empty() or url.text!=ai.endpoint else ai.token
-		para(ai.settings(url.text.strip_edges(),name_.text.strip_edges(),value)),true)
+	para("模型设置",17)
+	for role in MODEL_ROLES:
+		var p:Dictionary=ai.profiles.profile(role)
+		var prefix:String="沿用 · " if ai.profiles.inherits(role) else ""
+		action(MODEL_ROLES[role]+"　"+prefix+p.model,func(): edit_model(role))
 	action("切换音效",func():
 		sfx.volume_db=0 if sfx.volume_db < -40 else -80
 		notify("音效已开" if sfx.volume_db==0 else "音效已关"))

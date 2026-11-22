@@ -14,7 +14,11 @@ Windows 试玩包中双击 Liucha.exe，同目录需有 Liucha.pck。源码目�
 
 ## 模型和存档
 
-设置中可填兼容 Chat Completions 的接口、模型 ID 和本次游玩用的密钥。默认使用本机 18760 转发的 Qwen2.5-7B，仅该默认本机接口可读取已有河湾云凭证；需要对应转发运行。其他接口可用 LIUCHA_API_KEY 或在设置中输入密钥。档案和模型地址保存在 Godot 的 user://；Windows 默认是 %APPDATA%\Liucha。游玩操作自动存档并留一份备份。日常经营、项目式托运单和默认居民日程可离线使用。
+在「设置 → 全镇默认」选择服务商和模型 ID，也可给账房先生、阿禾、陆木匠、周叔单独配置。角色默认沿用全镇设置。连接测试按角色验证居民台词或账房拟约；全镇默认会测试两种回复。
+
+预设沿用《河湾》和《玄武门前》的模型目录，支持 Chat Completions 和 Anthropic Messages，并提供自定义地址和模型 ID。河湾云 Qwen 7B 和 14B 分别使用本机 18760 和 18761 的转发及已有云凭证。模型可用性取决于接口供应商和账户权限。
+
+密钥按完整接口地址区分。勾选记住后使用当前 Windows 用户的 DPAPI 加密保存；未勾选时只在本次游戏使用。在 Windows 上，档案和模型配置默认位于 %APPDATA%\Liucha。日常经营、项目式托运单和默认居民日程可离线使用。
 
 ## 开发验收
 
@@ -23,8 +27,9 @@ Windows 试玩包中双击 Liucha.exe，同目录需有 Liucha.pck。源码目�
 ```
 godot --headless --max-fps 60 --path . --script res://tests/play_week.gd
 godot --headless --max-fps 60 --path . --script res://tests/play_week.gd -- --live
+godot --headless --max-fps 60 --path . --script res://tests/models.gd -- --live
 ```
 
-第二条会实际访问配置的模型。测试使用单独的临时游戏存档。Windows 导出预设为 Windows Desktop。安装 Godot 4.5.1 Windows 导出模板后可直接导出。
+带 --live 的用例会实际访问模型。模型设置用例使用临时配置，验证两种协议、Windows 密钥持久化和角色设置，并在真实测试中使用河湾云 7B 和 14B。测试使用单独的临时游戏存档。Windows 导出预设为 Windows Desktop。安装 Godot 4.5.1 Windows 导出模板后可直接导出。
 
 村景底图由 imagegen 为本项目生成，角色、作物、船、天气与音效在引擎中绘制或合成。

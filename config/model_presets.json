@@ -1,0 +1,234 @@
+{
+  "riverbend_cloud_small": {
+    "label": "河湾云模型 · Qwen 7B（单卡）",
+    "protocol": "openai",
+    "endpoint": "http://127.0.0.1:18760/v1/chat/completions",
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "Qwen/Qwen2.5-7B-Instruct"
+    ],
+    "source": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct"
+  },
+  "riverbend_cloud_large": {
+    "label": "河湾云模型 · Qwen 14B（双卡）",
+    "protocol": "openai",
+    "endpoint": "http://127.0.0.1:18761/v1/chat/completions",
+    "model": "Qwen/Qwen2.5-14B-Instruct",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "Qwen/Qwen2.5-14B-Instruct"
+    ],
+    "source": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct"
+  },
+  "minimax_browser": {
+    "label": "MiniMax（Chat Completions）",
+    "protocol": "openai",
+    "endpoint": "https://api.minimaxi.com/v1/chat/completions",
+    "model": "MiniMax-M3.1-Flash",
+    "auth_type": "bearer",
+    "output_mode": "tools",
+    "token_parameter": "max_tokens",
+    "models": [
+      "MiniMax-M3.1-Flash",
+      "MiniMax-M3"
+    ],
+    "source": "https://platform.minimax.cn/docs/api-reference/text-openai-api",
+    "thinking": false
+  },
+  "minimax": {
+    "label": "MiniMax（Anthropic 兼容）",
+    "protocol": "anthropic",
+    "endpoint": "https://api.minimaxi.com/anthropic/v1/messages",
+    "model": "MiniMax-M3.1-Flash",
+    "auth_type": "bearer",
+    "output_mode": "tools",
+    "token_parameter": "max_tokens",
+    "models": [
+      "MiniMax-M3.1-Flash",
+      "MiniMax-M3"
+    ],
+    "source": "https://platform.minimax.cn/docs/api-reference/text-anthropic-api",
+    "thinking": false
+  },
+  "deepseek": {
+    "label": "DeepSeek",
+    "protocol": "openai",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-flash",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "deepseek-flash",
+      "deepseek-v4-pro"
+    ],
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "request_options": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
+  },
+  "dashscope": {
+    "label": "阿里云百炼 · 千问（北京）",
+    "protocol": "openai",
+    "endpoint": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "model": "qwen3.8-flash",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "qwen3.8-flash",
+      "qwen3.7-plus",
+      "qwen4-max",
+      "qwen-plus-character"
+    ],
+    "source": "https://help.aliyun.com/zh/model-studio/model-list-text-generation"
+  },
+  "zhipu": {
+    "label": "智谱 · GLM（中国站）",
+    "protocol": "openai",
+    "endpoint": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    "model": "glm-5.3-flash",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "glm-5.3-flash",
+      "glm-5.3",
+      "glm-5.3-flashx"
+    ],
+    "source": "https://docs.bigmodel.cn/cn/guide/start/model-overview",
+    "request_options": {
+      "reasoning_effort": "low"
+    }
+  },
+  "kimi": {
+    "label": "月之暗面 · Kimi（中国站）",
+    "protocol": "openai",
+    "endpoint": "https://api.moonshot.cn/v1/chat/completions",
+    "model": "kimi-k3.1-pro",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "kimi-k3.1-pro",
+      "kimi-k3.1-pro-highspeed",
+      "kimi-k3"
+    ],
+    "source": "https://platform.kimi.com/docs/api/models-overview",
+    "request_options": {
+      "reasoning_effort": "low"
+    }
+  },
+  "openai": {
+    "label": "OpenAI（Chat Completions）",
+    "protocol": "openai",
+    "endpoint": "https://api.openai.com/v1/chat/completions",
+    "model": "gpt-6.2-sol",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_completion_tokens",
+    "models": [
+      "gpt-6.2-sol",
+      "gpt-6.2-astra",
+      "gpt-5.5"
+    ],
+    "source": "https://developers.openai.com/api/docs/models",
+    "system_role": "developer",
+    "request_options": {
+      "reasoning_effort": "low"
+    },
+    "json_only_models": [
+      "gpt-6.2-sol",
+      "gpt-6.2-astra"
+    ]
+  },
+  "anthropic": {
+    "label": "Anthropic · Claude",
+    "protocol": "anthropic",
+    "endpoint": "https://api.anthropic.com/v1/messages",
+    "model": "claude-haiku-5-5",
+    "auth_type": "x-api-key",
+    "output_mode": "tools",
+    "token_parameter": "max_tokens",
+    "models": [
+      "claude-haiku-5-5",
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
+      "claude-fable-5-2"
+    ],
+    "source": "https://platform.claude.com/docs/en/models/overview"
+  },
+  "gemini": {
+    "label": "Google · Gemini",
+    "protocol": "openai",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "model": "gemini-3.8-flash",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "gemini-3.8-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-4-hydrogen",
+      "gemini-4-carbon"
+    ],
+    "source": "https://ai.google.dev/gemini-api/docs/models",
+    "request_options": {
+      "reasoning_effort": "low"
+    }
+  },
+  "xai": {
+    "label": "xAI · Grok",
+    "protocol": "openai",
+    "endpoint": "https://api.x.ai/v1/chat/completions",
+    "model": "grok-4.7",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "grok-4.7"
+    ],
+    "source": "https://docs.x.ai/developers/models/grok-4.7"
+  },
+  "mistral": {
+    "label": "Mistral AI",
+    "protocol": "openai",
+    "endpoint": "https://api.mistral.ai/v1/chat/completions",
+    "model": "mistral-small-2603",
+    "auth_type": "bearer",
+    "output_mode": "json",
+    "token_parameter": "max_tokens",
+    "models": [
+      "mistral-small-2603",
+      "mistral-large-4-0"
+    ],
+    "source": "https://docs.mistral.ai/models"
+  },
+  "openai_compatible": {
+    "label": "其他 OpenAI 兼容接口",
+    "protocol": "openai",
+    "endpoint": "",
+    "model": "",
+    "auth_type": "bearer",
+    "output_mode": "tools",
+    "token_parameter": "max_tokens",
+    "models": []
+  },
+  "anthropic_compatible": {
+    "label": "其他 Anthropic 兼容接口",
+    "protocol": "anthropic",
+    "endpoint": "",
+    "model": "",
+    "auth_type": "bearer",
+    "output_mode": "tools",
+    "token_parameter": "max_tokens",
+    "models": []
+  }
+}

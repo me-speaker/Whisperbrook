@@ -175,6 +175,7 @@ func restore(path: String=SLOT) -> bool:
 		if not FileAccess.file_exists(candidate): continue
 		var data=JSON.parse_string(FileAccess.get_file_as_string(candidate))
 		if data is Dictionary and data.get("version")==1 and data.has_all(s.keys()) and data.plots is Array and data.plots.size()==6:
+			data.day=int(data.day)
 			s=data
 			return true
 	return false
