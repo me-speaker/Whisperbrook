@@ -46,6 +46,7 @@ func play() -> void:
 	click_button("记入托运簿")
 	game.close_sheet()
 	game.interact("home")
+	game.interact("bed")
 	click_button("收工，睡到明早")
 	check(game.farm.s.day==2 and game.farm.s.coins==27 and game.farm.s.pantry.bean==2,"9 = 7 sold + 2 kept")
 	var restored=Farm.new()

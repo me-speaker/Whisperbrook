@@ -6,6 +6,11 @@ const Courier = preload("res://scripts/courier.gd")
 const Sounds = preload("res://scripts/sounds.gd")
 const INK:=Color("#274136")
 const CREAM:=Color("#f5ecd5")
+const KIT={"hand":"空手","hoe":"短锄","seed":"种袋","can":"水壶","rod":"竹竿"}
+var kit_buttons:Dictionary={}
+var energy_bar:ProgressBar
+var fishing_time:=0.0
+var bite_at:=0.0
 var farm=Farm.new()
 var map=Map.new()
 var ai=Courier.new()
@@ -43,6 +48,7 @@ func _ready() -> void:
 	add_child(map)
 	map.font=ui_font
 	map.arrived.connect(interact)
+	map.day_ended.connect(sleep_night)
 	add_child(ai)
 	add_child(sfx)
 	var layer:=CanvasLayer.new()
@@ -99,8 +105,57 @@ func panel(at: Vector2, size_:Vector2, color:Color) -> PanelContainer:
 	hud.add_child(p)
 	return p
 
+func tool_icon(id:String) -> Texture2D:
+	var shapes:={"hand":["    oo  ","  oo++o "," o++.+o "," o+.++o ","  o++o  ","   oo   "],"hoe":["   #### ","   ..## ","    +   ","   +    ","  +     "," +      "],"seed":["   oo   ","   ++   ","  o..o  "," o..+.o "," o.+..o ","  oooo  "],"can":["   ooo  "," o..+.o "," o....o+","  o..o +","  ++++  ","        "],"rod":["      +.","     + .","    +  .","   +   .","  +    o"," +      "]}
+	var image:=Image.create_empty(16,12,false,Image.FORMAT_RGBA8)
+	var palette:={"#":Color("#51696a"),".":Color("#6f9d91") if id=="can" else Color("#d0b387"),"+":Color("#856645"),"o":Color("#56634d")}
+	for y in shapes[id].size():
+		for x in shapes[id][y].length():
+			var pixel:String=shapes[id][y][x]
+			if pixel in palette: image.fill_rect(Rect2i(x*2,y*2,2,2),palette[pixel])
+	return ImageTexture.create_from_image(image)
+
+func equip(id:String) -> void:
+	if id not in KIT: return
+	if map.casting: finish_fishing(false)
+	map.set_placement("")
+	farm.s.tool=id
+	map.update_spots()
+	update_hud()
+
+func start_fishing() -> void:
+	if farm.s.tool!="rod":
+		notify("水里有鱼影，换上竹竿（5）再抛竿。")
+		return
+	var reason:String=farm.cast_line()
+	if reason!="":
+		notify(reason)
+		return
+	persist()
+	map.dest=map.hero
+	map.route.clear()
+	map.casting=true
+	map.bite=false
+	map.paused=true
+	fishing_time=0.0
+	bite_at=randf_range(1.5,3.1)
+	notify("浮子已落水，等它沉下去。")
+	sfx.note(320,0.14)
+
+func finish_fishing(caught:bool) -> void:
+	if not map.casting: return
+	map.casting=false
+	map.bite=false
+	map.paused=false
+	if caught:
+		farm.s.bag.fish+=1
+		persist()
+		sfx.note(680,0.28,true)
+		notify("竹篓里多了一尾河鲫。")
+	else: notify("水线一松，收回了空钩。")
+
 func make_hud() -> void:
-	var top:=panel(Vector2(16,13),Vector2(285,46),Color("#223d35ef"))
+	var top:=panel(Vector2(16,13),Vector2(310,46),Color("#223d35ef"))
 	var bar:=HBoxContainer.new()
 	bar.add_theme_constant_override("separation",14)
 	top.add_child(bar)
@@ -115,21 +170,41 @@ func make_hud() -> void:
 	row.add_child(wallet)
 	row.add_child(btn("托运簿",book))
 	row.add_child(btn("设置",settings_page))
-	var bottom:=panel(Vector2(16,487),Vector2(928,40),Color("#20382ff0"))
+	var bottom:=panel(Vector2(16,465),Vector2(928,59),Color("#233c33f0"))
 	var r:=HBoxContainer.new()
-	r.add_theme_constant_override("separation",16)
+	r.add_theme_constant_override("separation",8)
 	bottom.add_child(r)
-	pack=lab("",14,Color("#f5e9c8"))
-	pack.size_flags_horizontal=Control.SIZE_EXPAND_FILL
-	r.add_child(pack)
-	hint=lab("单击目的地或物件　·　方向键移动 / E 互动",13,Color("#d4d8b6"))
+	var vitals:=VBoxContainer.new()
+	vitals.custom_minimum_size.x=96
+	r.add_child(vitals)
+	pack=lab("",14,CREAM)
+	vitals.add_child(pack)
+	energy_bar=ProgressBar.new()
+	energy_bar.custom_minimum_size=Vector2(92,9)
+	energy_bar.show_percentage=false
+	energy_bar.max_value=farm.MAX_ENERGY
+	var fill:=StyleBoxFlat.new()
+	fill.bg_color=Color("#acc880")
+	energy_bar.add_theme_stylebox_override("fill",fill)
+	vitals.add_child(energy_bar)
+	for i in KIT.size():
+		var id:String=KIT.keys()[i]
+		var pick:=btn("",func():equip(id))
+		pick.icon=tool_icon(id)
+		pick.custom_minimum_size.x=76
+		pick.tooltip_text=str(i+1)+" · "+KIT[id]
+		kit_buttons[id]=pick
+		r.add_child(pick)
+	hint=lab("",12,Color("#e3d4ad"))
+	hint.size_flags_horizontal=Control.SIZE_EXPAND_FILL
+	hint.clip_text=true
 	r.add_child(hint)
 	build_button=btn("营造",construction)
 	r.add_child(build_button)
 	r.add_child(btn("行囊",bag_page))
 	toast=lab("",15,CREAM)
 	toast.add_theme_stylebox_override("normal",plate(Color("#35493df0"),Color("#c6ba8c"),4,13))
-	toast.position=Vector2(18,440)
+	toast.position=Vector2(18,422)
 	hud.add_child(toast)
 	toast.hide()
 	marker=lab("",13,CREAM)
@@ -139,15 +214,28 @@ func make_hud() -> void:
 
 func update_hud() -> void:
 	var t:=int(farm.s.minutes)
-	clock_label.text="春末  %02d 日　%02d:%02d　%s" % [farm.s.day,t/60,t%60,farm.weather(farm.s.day)]
+	clock_label.text="%s　%s%02d　%02d:%02d　%s" % [map.ZONE_NAMES[farm.s.zone],farm.SEASONS[farm.season()],farm.season_day(),t/60,t%60,farm.weather(farm.s.day)]
 	wallet.text="%d 文" % farm.s.coins
 	build_button.text="收起工具" if map.placing!="" else "营造"
-	hint.text="点标出的草地选址　·　Esc 收起" if map.placing!="" else "单击移动或操作　·　E 互动"
-	pack.text="背篓　%s　　 种袋　%s × %d" % [farm.inventory(farm.s.bag),farm.ITEMS[farm.s.crop].name,farm.s.seeds[farm.s.crop]]
+	hint.text="选址 · Esc 收起" if map.placing!="" else ("水量 %d/%d" % [farm.s.water,farm.capacity()] if farm.s.tool=="can" else "E 互动 · 1–5 换工具")
+	build_button.visible=farm.s.zone=="farm"
+	pack.text="体力　%d/%d" % [farm.s.energy,farm.MAX_ENERGY]
+	energy_bar.value=farm.s.energy
+	for id in KIT:
+		var pick:Button=kit_buttons[id]
+		pick.text=KIT[id] if id!="seed" else farm.ITEMS[farm.s.crop].name
+		pick.modulate=Color.WHITE if id==farm.s.tool else Color("#abae96")
 
 func _process(dt: float) -> void:
 	if not is_instance_valid(clock_label): return
 	update_hud()
+	if map.casting:
+		fishing_time+=dt
+		if not map.bite and fishing_time>=bite_at:
+			map.bite=true
+			sfx.note(830,0.23)
+			notify("浮子沉了！点水面或按 E 收竿。",2)
+		if fishing_time>=bite_at+2.0: finish_fishing(false)
 	marker.visible=map.closest!="" and not map.paused
 	if marker.visible:
 		marker.text="E  "+map.caption(map.closest)
@@ -164,6 +252,7 @@ func notify(message:String, duration:=5.0) -> void:
 	notice_time=duration
 
 func persist() -> void:
+	farm.s.location=[map.hero.x,map.hero.y]
 	if not farm.save_to(save_path): notify("存档写入失败，请检查本机存储。",12)
 
 func _notification(what: int) -> void:
@@ -171,12 +260,22 @@ func _notification(what: int) -> void:
 		persist()
 
 func _unhandled_input(event:InputEvent) -> void:
+	if map.casting:
+		if event is InputEventKey and event.pressed and not event.echo:
+			if event.keycode==KEY_ESCAPE: finish_fishing(false)
+			elif event.physical_keycode in [KEY_E,KEY_SPACE]: finish_fishing(map.bite)
+		elif event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT:
+			finish_fishing(map.bite)
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode==KEY_ESCAPE:
 			if is_instance_valid(popup): close_sheet()
 			elif map.placing!="": map.set_placement("")
 			return
 		if is_instance_valid(popup): return
+		if event.physical_keycode>=KEY_1 and event.physical_keycode<=KEY_5:
+			equip(KIT.keys()[event.physical_keycode-KEY_1])
+			return
 		match event.physical_keycode:
 			KEY_E,KEY_SPACE:
 				if map.closest!="": interact(map.closest)
@@ -193,9 +292,13 @@ func close_sheet() -> void:
 	popup=null
 	map.paused=false
 	map.dest=map.hero
+	map.target=""
+	map.route.clear()
+	map.goal=Vector2.INF
 	page=""
 
 func sheet(title:String, id:String) -> void:
+	if map.casting: finish_fishing(false)
 	close_sheet()
 	map.set_placement("")
 	page=id
@@ -262,25 +365,88 @@ func interact(id:String) -> void:
 				persist()
 			notify(message)
 		return
+	if id in ["east","west"]:
+		var zones:=["farm","market","marsh"]
+		var next:int=zones.find(farm.s.zone)+(1 if id=="east" else -1)
+		if next>=0 and next<zones.size():
+			var zone:String=zones[next]
+			var entry:Vector2=map.LOCATIONS[zone]["west" if id=="east" else "east"]
+			map.travel(zone,entry+Vector2(40 if id=="east" else -40,4))
+			farm.later(5)
+			persist()
+			notify(map.ZONE_NAMES[zone],2)
+		return
+	if id.begins_with("site") and farm.s.tool=="hoe":
+		var site:=int(id.trim_prefix("site"))
+		notify(farm.clear_brush(site) if farm.has_brush(site) else farm.build("field",site))
+		map.flourish("hoe")
+		persist()
+		return
 	if id.begins_with("chest"):
 		box_page()
 		return
 	if id.begins_with("plot"):
 		var msg:String=farm.work_plot(int(id.trim_prefix("plot")))
+		map.flourish(farm.s.tool)
 		sfx.note(490,0.16)
 		notify(msg)
 		persist()
 		return
 	match id:
+		"board":
+			sheet("街坊托单","board")
+			var job:Dictionary=farm.market_request()
+			para("%s想%s。" % [farm.PEOPLE[job.person],job.use])
+			var reward:int=job.quantity*(farm.ITEMS[job.item].price+1)+2
+			para("%s × %d　·　酬谢 %d 文　·　今日有效" % [farm.ITEMS[job.item].name,job.quantity,reward])
+			if farm.s.delivery_day==farm.s.day: para("今日这份心意已送到。")
+			else:
+				action("从背篓交货",func():
+					var msg:String=farm.deliver_request()
+					persist()
+					close_sheet()
+					notify(msg),true)
+		"angler": start_fishing()
+		"greens_a","greens_b":
+			notify(farm.forage(id))
+			persist()
+		"well":
+			farm.s.water=farm.capacity()
+			sfx.note(490,0.16)
+			notify("井水装满一壶，够浇 %d 畦。" % farm.capacity())
+			persist()
 		"wood":
 			notify(farm.gather())
 			sfx.note(250,0.15)
 			persist()
 		"box": box_page()
-		"home": home()
+		"home":
+			map.travel("house",Vector2(490,378))
+			persist()
+			notify("家里　·　左边是床，右边是灶和竹篮。",3)
+		"outside":
+			map.travel("farm",Vector2(235,224))
+			persist()
+		"bed","pantry": home()
+		"stove":
+			sheet("青砖灶台","stove")
+			para("马兰鲫鱼汤　　河鲫 ×1　马兰头 ×1")
+			para("灶边竹篮和背篓的食材都可以下锅，趁热喝下可恢复 22 点体力。")
+			action("起火煮汤",func():
+				var msg:String=farm.cook()
+				persist()
+				close_sheet()
+				notify(msg),true)
 		"dock":
 			sheet("柳下渡口","dock")
 			para("船板已补 %d / 8。%s" % [farm.s.boat,ferry_line()])
+			if farm.early_market():
+				action("搭早渡到芦湾钓台",func():
+					close_sheet()
+					map.travel("marsh",map.LOCATIONS.marsh.angler-Vector2(16,0))
+					farm.later(1)
+					persist()
+					sfx.note(720,0.6,true),true)
 			action("去找周叔",func():npc_page("fisher"))
 		"shop","carpenter","fisher": npc_page(id)
 
@@ -324,8 +490,7 @@ func home() -> void:
 func sleep_night() -> void:
 	var previous:bool=farm.s.ferry
 	var receipt:String=farm.night()
-	map.hero=Vector2(235,220)
-	map.dest=map.hero
+	map.travel("farm",Vector2(235,220))
 	persist()
 	close_sheet()
 	sfx.note(780 if farm.s.ferry and not previous else 520,1.0,true)
@@ -346,17 +511,28 @@ func box_page() -> void:
 func bag_page() -> void:
 	sheet("竹编行囊","bag")
 	para("背篓　"+farm.inventory(farm.s.bag))
-	para("选中种子后，点一块空地即可播种。")
+	para("本季种袋 · "+farm.SEASONS[farm.season()])
 	for k in farm.FIELDS:
+		if farm.season() not in farm.CROPS[k] and farm.s.seeds[k]<=0: continue
 		var select=func():
 			farm.s.crop=k
+			equip("seed")
 			persist()
 			bag_page()
 		action("%s　%d 粒%s" % [farm.ITEMS[k].name,farm.s.seeds[k],"　· 已选" if farm.s.crop==k else ""],select)
+	for k in farm.ITEMS:
+		if k not in ["wood","fish"] and farm.s.bag[k]>0:
+			action("吃一份"+farm.ITEMS[k].name,func():
+				var msg:String=farm.eat(k)
+				persist()
+				bag_page()
+				para(msg))
 	action("查看收支和镇上近况",history_page)
 
 func history_page() -> void:
 	sheet("生活手记","history")
+	para("%s · 明日%s　　%s" % [farm.SEASONS[farm.season()],farm.weather(farm.s.day+1),ferry_line()],14)
+	if not farm.s.last_shipment.is_empty(): action("查上一班晚船的实收单",func():show_bill(farm.s.last_shipment))
 	if farm.s.log.is_empty(): para("今天刚到柳汊。第一笔出货会记在这里。")
 	var entries:Array=farm.s.log.duplicate()
 	entries.reverse()
@@ -377,11 +553,11 @@ func book() -> void:
 	action("查看今晚试算",func():show_bill(farm.dispatch_plan()))
 
 func show_bill(bill:Dictionary) -> void:
-	sheet("今晚的出货单","preview")
+	sheet("第 %d 日 · 晚船回单" % bill.day if bill.has("day") else "今晚的出货单","preview")
 	para("卖出　"+farm.inventory(bill.sold))
 	para("留在灶边　"+farm.inventory(bill.kept))
 	para("送往工坊　"+farm.inventory(bill.sent))
-	para("预计入账　%d 文" % bill.coins)
+	para(("实收入账　%d 文" if bill.has("day") else "预计入账　%d 文") % bill.coins)
 	action("回托运簿",book)
 
 func ask_clerk(words:String) -> void:
@@ -431,7 +607,7 @@ func manual_rule() -> void:
 	para("对象")
 	var selector:=OptionButton.new()
 	selector.add_theme_font_override("font",ui_font)
-	var ids:=["vegetable","bean","turnip","wood"]
+	var ids:Array=["vegetable"]+farm.ITEMS.keys()
 	for id in ids: selector.add_item(farm.label_for(id))
 	content.add_child(selector)
 	var choice:=OptionButton.new()
@@ -454,14 +630,28 @@ func npc_page(id:String) -> void:
 			para("「早市有人问头茬菜呢。」" if farm.s.sold_veg<8 else "「昨日的菜有人回头来买，我把门口的空筐也摆上啦。」")
 			var row:=HBoxContainer.new()
 			content.add_child(row)
+			if farm.s.minutes>=1080: para("今日收摊，明早七时开铺。")
 			for k in farm.FIELDS:
-				row.add_child(btn("%s种 ×3 · 2文" % farm.ITEMS[k].name,func():
+				if farm.season() not in farm.CROPS[k] or farm.s.minutes>=1080: continue
+				row.add_child(btn("%s种 ×%d · 2文" % [farm.ITEMS[k].name,4 if farm.s.friendship.get("shop",0)>=4 else 3],func():
 					var msg:String=farm.buy_seed(k)
 					persist()
 					npc_page(id)
 					para(msg)))
+			if farm.early_market():
+				action("早渡鱼市 · 卖出背篓河鲫　8 文/尾",func():
+					var msg:String=farm.trade_fish()
+					persist()
+					npc_page(id)
+					para(msg))
 		"carpenter":
 			para("河岸修船　·　船板 %d / 8" % farm.s.boat)
+			if farm.s.can_level==0:
+				action("给水壶换大水胆　18 文 · 木料 2",func():
+					var msg:String=farm.improve_can()
+					persist()
+					npc_page(id)
+					para(msg))
 			para("「舷边补好了，还差一层桐油香。」" if farm.s.boat>=8 else "「你听，这块板敲起来还发闷。晴天再补一块。」")
 			if farm.s.boat<8 and not farm.s.boat_agreed:
 				action("商量把拾来的木料送工坊",func():
@@ -474,6 +664,17 @@ func npc_page(id:String) -> void:
 		"fisher":
 			para("柳下渡口　·　"+ferry_line())
 			para("「隔日撑一趟就好。剩下的早晨，我给闺女煮碗面。」")
+	para("往来情分　%d" % farm.s.friendship.get(id,0),14)
+	if farm.s.gifts.get(id,0)!=farm.s.day and farm.inventory(farm.s.bag)!="空":
+		action("从背篓里送份心意",func():
+			sheet("送给"+farm.PEOPLE[id],"gift")
+			for k in farm.ITEMS:
+				if farm.s.bag[k]>0:
+					action("%s × 1" % farm.ITEMS[k].name,func():
+						var msg:String=farm.give(id,k)
+						persist()
+						npc_page(id)
+						para(msg)))
 	var history:Array=farm.s.talk.get(id,[])
 	if not history.is_empty():
 		for turn in history.slice(-2):

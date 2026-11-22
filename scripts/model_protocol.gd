@@ -2,7 +2,7 @@ extends RefCounted
 
 const TOOL="draft_shipping_rule"
 const SCHEMA={"type":"object","properties":{
-	"selector":{"type":"string","enum":["vegetable","bean","turnip","wood"]},
+	"selector":{"type":"string","enum":["vegetable","bean","turnip","lotus","taro","wood","fish","herb"]},
 	"action":{"type":"string","enum":["keep","sell","workshop","remove"]},
 	"count":{"type":"integer"},"question":{"type":"string"}
 },"additionalProperties":false}
