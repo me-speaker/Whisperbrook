@@ -18,12 +18,13 @@ const MAX_ENERGY = 40
 const CAN_SIZE = 6
 const TIRED = "有些乏了。吃些东西，或回家早些歇息。"
 const SLOT = "user://farm.json"
-const YARD_COLS = 6
-# Grass parcels stop at the stones and flowers along the quay.
-const YARD_SITES = [0,1,2,3,4,5,6,7,8,9,10,11,13,14,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32]
-const BRUSH = [18,20,22,24,26,28,30,32]
-# Row-major land parcels. These six retain the original beds' positions and order.
-const STARTER_SITES = [1,2,3,7,8,9]
+const YARD_ORIGIN = Vector2(16,266)
+const TILE = Vector2(70,40)
+const YARD_COLS = 13
+const YARD_ROWS = 4
+const BRUSH = [7,9,11,21,23,33,35,37]
+const LEGACY_START = [1,2,3,7,8,9]
+const LEGACY_SITES = [0,1,2,3,4,5,6,7,8,9,10,11,13,14,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32]
 const BUILD = {
 	"field":{"name":"菜畦","wood":0,"minutes":20},
 	"chest":{"name":"田头出货箱","wood":2,"minutes":30}
@@ -76,12 +77,10 @@ func clear_brush(site:int) -> String:
 	return "理净枯枝，收得一份木料。现在可以开畦了。"
 
 func _init() -> void:
-	s = {"version":2,"day":1,"minutes":420,"coins":6,"bag":{"bean":0,"turnip":0,"wood":0},
+	s = {"version":3,"legacy_box":false,"day":1,"minutes":420,"coins":6,"bag":{"bean":0,"turnip":0,"wood":2},
 		"box":{"bean":0,"turnip":0,"wood":0},"pantry":{"bean":0,"turnip":0,"wood":0},
 		"seeds":{"bean":3,"turnip":2},"crop":"bean","plots":[],"rules":{},"wood_day":0,
 		"boat":0,"boat_agreed":false,"sold_veg":0,"ferry":false,"log":[],"talk":{},"chests":[]}
-	for i in STARTER_SITES.size():
-		s.plots.append({"site":STARTER_SITES[i],"item":"bean" if i < 3 else "", "age":2 if i < 3 else 0,"wet":false})
 	upgrade_household(s)
 
 func season() -> int:
@@ -128,10 +127,33 @@ func give(person:String,item:String) -> String:
 	return msg
 
 func free_site(site:int) -> bool:
-	if site not in YARD_SITES or site in s.chests: return false
+	if site<0 or site>=YARD_COLS*YARD_ROWS or site in s.chests: return false
 	for plot in s.plots:
 		if plot.site==site: return false
 	return true
+
+func tile_center(site:int) -> Vector2:
+	return YARD_ORIGIN+(Vector2(site%YARD_COLS,floori(float(site)/YARD_COLS))+Vector2(0.5,0.5))*TILE
+
+func tile_at(p:Vector2) -> int:
+	var cell:=Vector2i(((p-YARD_ORIGIN)/TILE).floor())
+	if not Rect2i(0,0,YARD_COLS,YARD_ROWS).has_point(cell): return -1
+	return cell.y*YARD_COLS+cell.x
+
+func reclaim(site:int) -> String:
+	if site==-1 and s.legacy_box:
+		s.legacy_box=false
+	elif site in s.chests:
+		s.chests.erase(site)
+	else:
+		for i in s.plots.size():
+			if s.plots[i].site!=site: continue
+			if s.plots[i].item!="": return "这一畦还有作物，收获后可以平整。"
+			s.plots.remove_at(i)
+			return "菜畦已平整，可以重新布局。"
+		return "这里已经是草地。"
+	s.bag.wood+=BUILD.chest.wood
+	return "已收回箱板，可到别处重搭。晚船货单仍然有效。"
 
 func build(kind:String,site:int) -> String:
 	if not BUILD.has(kind) or not free_site(site): return "请在院内挑一块空草地。"
@@ -354,27 +376,50 @@ func restore(path: String=SLOT) -> bool:
 		if not FileAccess.file_exists(candidate): continue
 		var data=JSON.parse_string(FileAccess.get_file_as_string(candidate))
 		if not data is Dictionary or not data.get("plots") is Array: continue
-		if data.get("version")==1 and data.plots.size()==STARTER_SITES.size():
-			for i in STARTER_SITES.size():
-				if data.plots[i] is Dictionary: data.plots[i]["site"]=STARTER_SITES[i]
+		if data.get("version")==1 and data.plots.size()==LEGACY_START.size():
+			for i in LEGACY_START.size():
+				if data.plots[i] is Dictionary: data.plots[i]["site"]=LEGACY_START[i]
 			data.chests=[]
 			data.version=2
-		if data.get("version")==2 and data.has_all(["bag","box","pantry","seeds"]): upgrade_household(data)
-		if data.get("version")==2 and data.has_all(s.keys()) and valid_yard(data):
+		if data.get("version")==2:
+			if not migrate_yard(data): continue
+		if data.get("version")==3 and data.has_all(["bag","box","pantry","seeds"]): upgrade_household(data)
+		if data.get("version")==3 and data.has_all(s.keys()) and valid_yard(data):
 			data.day=int(data.day)
 			s=data
 			return true
 	return false
 
+func migrate_yard(data:Dictionary) -> bool:
+	if not data.get("chests") is Array: return false
+	for p in data.plots:
+		if not p is Dictionary or legacy_site(p.get("site",-1))<0: return false
+		p.site=legacy_site(p.site)
+	for key in ["chests","cleared"]:
+		if not data.has(key): continue
+		for i in data[key].size():
+			var site:=legacy_site(data[key][i])
+			if site<0: return false
+			data[key][i]=site
+	data.legacy_box=true
+	data.version=3
+	return true
+
+func legacy_site(value:Variant) -> int:
+	if not (value is float or value is int) or int(value)!=value or int(value) not in LEGACY_SITES: return -1
+	var site:=int(value)
+	if site>=18: return 7+(site-18)%5+floori(float(site-18)/5)*YARD_COLS
+	return 1+site%6+floori(float(site)/6)*YARD_COLS
+
 func valid_yard(data:Dictionary) -> bool:
-	if not data.chests is Array or data.plots.size()<STARTER_SITES.size(): return false
+	if not data.chests is Array: return false
 	var sites:Array=data.chests.duplicate()
 	for plot in data.plots:
 		if not plot is Dictionary or not plot.has_all(["site","item","age","wet"]): return false
 		sites.append(plot.site)
 	var seen:={}
 	for site in sites:
-		if not (site is int or site is float) or site!=int(site) or int(site) not in YARD_SITES or seen.has(int(site)): return false
+		if not (site is int or site is float) or site!=int(site) or site<0 or site>=YARD_ROWS*YARD_COLS or seen.has(int(site)): return false
 		seen[int(site)]=true
 	for i in data.chests.size(): data.chests[i]=int(data.chests[i])
 	for plot in data.plots: plot.site=int(plot.site)

@@ -56,6 +56,12 @@ func screenshot(name_:String) -> void:
 
 func tour() -> void:
 	tmp="user://tour-%d.json" % Time.get_ticks_usec()
+	var inherited=preload("res://scripts/farm.gd").new()
+	inherited.s.version=2
+	inherited.s.erase("legacy_box")
+	inherited.s.bag.wood=0
+	for i in 6: inherited.s.plots.append({"site":inherited.LEGACY_START[i],"item":"bean" if i<3 else "","age":2 if i<3 else 0,"wet":false})
+	inherited.save_to(tmp)
 	town=Town.new()
 	town.save_path=tmp
 	root.add_child(town)
@@ -64,9 +70,9 @@ func tour() -> void:
 	var f=town.farm
 	await screenshot("homestead")
 	press(KEY_2)
-	await use("site18")
-	await use("site18")
-	check(f.s.cleared.has(18) and f.s.plots.back().site==18 and f.s.bag.wood==1,"short hoe clears brush and prepares eastern field")
+	await use("site7")
+	await use("site7")
+	check(f.s.cleared.has(7) and f.s.plots.back().site==7 and f.s.bag.wood==1,"short hoe clears brush and prepares eastern field")
 	press(KEY_4)
 	await use("plot6")
 	press(KEY_3)
@@ -126,7 +132,7 @@ func tour() -> void:
 	button("收工，睡到明早")
 	check(f.s.pantry.fish==1 and f.s.bag.fish==0 and f.s.energy==f.MAX_ENERGY and f.s.zone=="farm","sleep restores energy and honors shipping rule")
 	var save=Farm.new()
-	check(save.restore(tmp) and save.s.pantry.fish==1 and save.s.cleared.has(18),"new world and classic farm state persist together")
+	check(save.restore(tmp) and save.s.pantry.fish==1 and save.s.cleared.has(7),"new world and classic farm state persist together")
 	f.s.bag.herb=1
 	f.s.energy=4
 	await use("home")

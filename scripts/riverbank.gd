@@ -10,9 +10,9 @@ const LOCATIONS={
 	"house":{"bed":Vector2(223,243),"stove":Vector2(709,211),"pantry":Vector2(736,333),"outside":Vector2(472,428)}
 }
 const WALKWAYS={
-	"farm":[Rect2(37,219,887,172),Rect2(190,194,128,58),Rect2(475,199,87,53)],
+	"farm":[Rect2(29,219,901,212),Rect2(190,194,128,58),Rect2(475,199,87,53)],
 	"market":[Rect2(40,242,884,139),Rect2(155,199,115,60),Rect2(473,183,138,81),Rect2(752,201,147,64)],
-	"marsh":[Rect2(38,232,595,94),Rect2(214,202,316,70),Rect2(510,262,218,74),Rect2(651,288,85,72)],
+	"marsh":[Rect2(38,232,595,94),Rect2(214,202,316,70),Rect2(510,262,218,74),Rect2(651,288,85,72),Rect2(85,308,533,41)],
 	"house":[Rect2(184,221,634,197),Rect2(652,195,110,82),Rect2(455,379,79,75)]
 }
 const FIXTURES={
@@ -29,6 +29,7 @@ var dest:=hero
 var target:=""
 var heading:=1
 var facing:=1
+var look_direction:=Vector2.DOWN
 var walking:=false
 var paused:=false
 var anim:=0.0
@@ -42,6 +43,8 @@ var backdrop:=Sprite2D.new()
 var nav:=AStarGrid2D.new()
 var route:=PackedVector2Array()
 var goal:=Vector2.INF
+var barriers:Array=[]
+var nearby:Array[String]=[]
 var casting:=false
 var bite:=false
 var swing:=0.0
@@ -61,26 +64,34 @@ func travel(zone:String,spawn:Vector2) -> void:
 	nav.offset=Vector2(5,5)
 	nav.diagonal_mode=AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	nav.update()
-	for y in 54:
-		for x in 96:
-			var cell:=Vector2i(x,y)
-			nav.set_point_solid(cell,not walkable(nav.get_point_position(cell)))
+	refresh_navigation()
 	hero=area(spawn)
 	positions.clear()
 	if zone=="market":
 		for id in BARNS: positions[id]=npc_dest(id)
 	set_placement("")
 
+func refresh_navigation() -> void:
+	barriers=FIXTURES[farm.s.zone].duplicate()
+	if farm.s.zone=="farm":
+		for site in farm.s.chests: barriers.append(Rect2(site_position(site)-Vector2(14,7),Vector2(28,10)))
+		if farm.s.legacy_box: barriers.append(Rect2(311,213,28,10))
+	for y in 54:
+		for x in 96:
+			var cell:=Vector2i(x,y)
+			nav.set_point_solid(cell,not walkable(nav.get_point_position(cell)))
+	goal=Vector2.INF
+	route.clear()
+
 func walkable(p:Vector2) -> bool:
-	for fixture:Rect2 in FIXTURES[farm.s.zone]:
+	for fixture:Rect2 in barriers:
 		if fixture.has_point(p): return false
 	for rect_:Rect2 in WALKWAYS[farm.s.zone]:
 		if rect_.has_point(p): return true
 	return false
 
 func site_position(site:int) -> Vector2:
-	if site>=18: return Vector2(541+((site-18)%5)*70,286+floori((site-18)/5.0)*40)
-	return Vector2(121+(site%farm.YARD_COLS)*70,286+floori(float(site)/farm.YARD_COLS)*40)
+	return farm.tile_center(site)
 
 func bed(i: int) -> Vector2:
 	return site_position(farm.s.plots[i].site)
@@ -89,6 +100,8 @@ func set_placement(kind:String) -> void:
 	placing=kind
 	target=""
 	closest=""
+	manual_focus=false
+	nearby.clear()
 	dest=hero
 	route.clear()
 	goal=Vector2.INF
@@ -96,13 +109,17 @@ func set_placement(kind:String) -> void:
 
 func update_spots() -> void:
 	spots.clear()
-	if placing!="" or (farm.s.tool=="hoe" and farm.s.zone=="farm"):
-		for site in farm.YARD_SITES:
+	if placing in ["field","chest"] or (placing=="" and farm.s.tool=="hoe" and farm.s.zone=="farm"):
+		for site in farm.YARD_COLS*farm.YARD_ROWS:
 			if farm.free_site(site): spots["site"+str(site)]=site_position(site)
 		if placing!="": return
-	spots.merge(LOCATIONS[farm.s.zone])
-	spots.merge(positions,true)
+	if placing!="reclaim":
+		spots.merge(LOCATIONS[farm.s.zone])
+		spots.merge(positions,true)
+		if farm.s.zone=="marsh" and farm.s.tool=="rod": spots["bank"]=Vector2(351,347)
 	if farm.s.zone!="farm": return
+	if farm.s.legacy_box: spots["box"]=LOCATIONS.farm.box
+	else: spots.erase("box")
 	for i in farm.s.plots.size(): spots["plot"+str(i)]=bed(i)
 	for site in farm.s.chests: spots["chest"+str(site)]=site_position(site)
 
@@ -120,6 +137,7 @@ func _ready() -> void:
 	set_process(true)
 
 func area(p: Vector2) -> Vector2:
+	if walkable(p): return p
 	var best:=Vector2.INF
 	for rect_:Rect2 in WALKWAYS[farm.s.zone]:
 		var near:=p.clamp(rect_.position+Vector2.ONE,rect_.end-Vector2.ONE)
@@ -142,6 +160,85 @@ func grid_cell(p:Vector2) -> Vector2i:
 			var neighbor:=cell+Vector2i(dx,dy)
 			if nav.is_in_boundsv(neighbor) and not nav.is_point_solid(neighbor): return neighbor
 	return cell
+
+# Rectangle edges partition a line into spans with constant walkability.
+func segment_clear(a:Vector2,b:Vector2) -> bool:
+	if not walkable(a) or not walkable(b): return false
+	var delta:=b-a
+	var cuts: Array[float]=[0.0,1.0]
+	for rect_:Rect2 in WALKWAYS[farm.s.zone]+barriers:
+		for axis in 2:
+			if is_zero_approx(delta[axis]): continue
+			for edge in [rect_.position[axis],rect_.end[axis]]:
+				var t:float=(edge-a[axis])/delta[axis]
+				if t>0 and t<1: cuts.append(t)
+	cuts.sort()
+	for i in range(1,cuts.size()):
+		if not walkable(a.lerp(b,(cuts[i-1]+cuts[i])*0.5)): return false
+	return true
+
+func path_to(a:Vector2,b:Vector2) -> PackedVector2Array:
+	if segment_clear(a,b): return PackedVector2Array([b])
+	var nodes:=nav.get_point_path(grid_cell(a),grid_cell(b))
+	if nodes.is_empty(): return PackedVector2Array()
+	nodes.append(b)
+	var result:=PackedVector2Array()
+	var origin:=a
+	var i:=0
+	while i<nodes.size():
+		var next:=nodes.size()-1
+		while next>=i and not segment_clear(origin,nodes[next]): next-=1
+		if next<i: return PackedVector2Array()
+		origin=nodes[next]
+		result.append(origin)
+		i=next+1
+	return result
+
+func footprint(id:String) -> Rect2:
+	var half:=Vector2(11,7)
+	match id:
+		"bank": return Rect2(85,345,532,4)
+		"home": half=Vector2(48,9)
+		"well": half=Vector2(27,11)
+		"wood": half=Vector2(52,15)
+		"board": return Rect2(211,269,131,17)
+		"bed": half=Vector2(64,14)
+		"stove","pantry": half=Vector2(50,17)
+		"dock": half=Vector2(42,12)
+		"east","west","outside": half=Vector2(9,12)
+	if id.begins_with("plot") or id.begins_with("site"): half=farm.TILE*0.5-Vector2(4,5)
+	return Rect2(Vector2(spots[id])-half,2*half)
+
+func contact(id:String,from:Vector2) -> Vector2:
+	var rect_:=footprint(id)
+	return from.clamp(rect_.position,rect_.end)
+
+func in_reach(id:String) -> bool:
+	var near:=contact(id,hero)
+	var radius:=32.0 if id.begins_with("plot") or id.begins_with("site") else 43.0
+	if hero.distance_to(near)>radius: return false
+	# Some parts of the sprite itself may be solid; stop just outside the contact edge.
+	var stop:=near.move_toward(hero,2)
+	return segment_clear(hero,stop) if walkable(stop) else segment_clear(hero,area(near))
+
+func update_focus() -> void:
+	nearby.clear()
+	for id in spots:
+		if in_reach(id): nearby.append(id)
+	nearby.sort_custom(func(a,b): return focus_cost(a)<focus_cost(b))
+	if nearby.is_empty(): closest=""
+	elif closest not in nearby or not manual_focus: closest=nearby[0]
+
+var manual_focus:=false
+
+func focus_cost(id:String) -> float:
+	var d:Vector2=Vector2(spots[id])-hero
+	return hero.distance_to(contact(id,hero))+0.05*d.length()-look_direction.dot(d.normalized())*2
+
+func cycle_focus() -> void:
+	if nearby.size()<2: return
+	closest=nearby[(nearby.find(closest)+1)%nearby.size()]
+	manual_focus=true
 
 func npc_dest(id: String) -> Vector2:
 	var noon_: bool=farm.s.minutes>=720
@@ -187,31 +284,34 @@ func _process(dt: float) -> void:
 			goal=Vector2.INF
 			route.clear()
 		else:
-			if spots.has(target): dest=area(spots[target]+Vector2(0,10))
+			if target!="" and not spots.has(target): set_placement(placing)
+			if spots.has(target):
+				if in_reach(target):
+					dest=hero
+					route.clear()
+				else: dest=area(contact(target,hero))
 			if hero.distance_to(dest)>1 and dest.distance_to(goal)>2:
 				goal=dest
-				route=nav.get_point_path(grid_cell(hero),grid_cell(dest))
-				if not route.is_empty():
-					route.remove_at(0)
-					route.append(dest)
+				route=path_to(hero,dest)
+				if route.is_empty():
+					target=""
+					dest=hero
 			if not route.is_empty():
 				hero=hero.move_toward(route[0],dt*165)
 				if hero.distance_to(route[0])<0.2: route.remove_at(0)
 		walking=last.distance_to(hero)>0.05
 		if walking:
+			look_direction=(hero-last).normalized()
 			if absf(last.x-hero.x)>0.1: heading=1 if hero.x>last.x else -1
 			facing=1 if hero.y>=last.y else -1
-		if not target.is_empty() and hero.distance_to(dest)<2:
+		if not target.is_empty() and spots.has(target) and in_reach(target):
 			var done:=target
 			target=""
+			dest=hero
+			route.clear()
 			arrived.emit(done)
-	closest=""
-	var distance:=49.0
-	for id in spots:
-		var d:float=hero.distance_to(spots[id])
-		if d<distance:
-			closest=id
-			distance=d
+	if walking: manual_focus=false
+	update_focus()
 	queue_redraw()
 
 func point(at: Vector2) -> void:
@@ -222,8 +322,8 @@ func point(at: Vector2) -> void:
 		var ground:bool=id.begins_with("plot") or id.begins_with("site")
 		var offset:=Vector2.ZERO if ground else Vector2(0,-11)
 		var d=at.distance_to(spots[id]+offset)
-		var radius:=33 if ground else 30
-		if d<radius and d<score:
+		var hit:=Rect2(Vector2(spots[id])-farm.TILE/2,farm.TILE).has_point(at) if ground else Rect2(Vector2(spots[id])-Vector2(14,32),Vector2(28,39)).has_point(at)
+		if hit and d<score:
 			pick=id
 			score=d
 	if pick=="" and placing=="":
@@ -234,16 +334,21 @@ func point(at: Vector2) -> void:
 		if farm.s.zone=="farm" and Rect2(142,106,126,94).has_point(at): pick="home"
 		if farm.s.zone=="farm" and Rect2(772,102,118,98).has_point(at): pick="wood"
 		if farm.s.zone=="farm" and Rect2(483,168,62,58).has_point(at): pick="well"
-		if farm.s.zone=="marsh" and (Rect2(655,307,93,101).has_point(at) or (farm.s.tool=="rod" and at.y>372)): pick="angler"
+		if farm.s.zone=="marsh":
+			if Rect2(655,307,93,101).has_point(at): pick="angler"
+			elif spots.has("bank") and Rect2(85,336,533,125).has_point(at): pick="bank"
 		if farm.s.zone=="market":
 			if Rect2(206,232,138,54).has_point(at): pick="board"
 			if Rect2(460,92,153,100).has_point(at): pick="shop"
 			elif Rect2(725,382,116,66).has_point(at): pick="dock"
 	target=pick
-	dest=area(at) if pick.is_empty() else area(spots[pick]+Vector2(0,10))
+	dest=area(at) if pick.is_empty() else area(contact(pick,hero))
 	goal=Vector2.INF
+	route.clear()
 
 func caption(id: String) -> String:
+	if id=="bank": return "岸边抛竿"
+	if placing=="reclaim": return "平整空畦" if id.begins_with("plot") else "拆收箱板"
 	match id:
 		"board": return "街坊托单"
 		"bed": return "歇息"
@@ -411,7 +516,7 @@ func draw_marsh() -> void:
 			block(sprig.x-3,sprig.y-6,4,3,"97b675")
 			block(sprig.x+1,sprig.y-9,3,3,"c2c892")
 	if casting:
-		var bob:=Vector2(hero.x+28,hero.y+36+sin(anim*4.0)*2)
+		var bob:=Vector2(hero.x+28,maxf(hero.y+36,374)+sin(anim*4.0)*2)
 		draw_line(hero+Vector2(8,-15),hero+Vector2(26,-35),Color("#a58e63"),2)
 		draw_line(hero+Vector2(26,-35),bob,Color("#e9e3ccaa"),1)
 		draw_circle(bob,3,Color("#bb5d4e"))
@@ -443,6 +548,8 @@ func _draw() -> void:
 			block(x,191,13,9,"855f40")
 			block(x+1,190,11,3,"adc16c")
 	if farm.s.zone=="farm":
+		if not paused and (closest.begins_with("plot") or closest.begins_with("site")) and spots.has(closest):
+			draw_rect(footprint(closest),Color("#f4dfa69a"),false,1.5)
 		for site in farm.BRUSH:
 			if farm.has_brush(site):
 				var p:=site_position(site)
@@ -451,9 +558,9 @@ func _draw() -> void:
 					draw_line(pos,pos+Vector2(6,-5-j%3),Color("#866f4b"),2)
 					block(pos.x+4,pos.y-6,5,2,"91a168")
 		for i in farm.s.plots.size(): plant(i)
-		if placing!="" or farm.s.tool=="hoe":
-			for site in farm.YARD_SITES:
-				if farm.free_site(site): survey(site)
+		if placing in ["field","chest"] or farm.s.tool=="hoe":
+			var site:int=farm.tile_at(get_local_mouse_position())
+			if farm.free_site(site): survey(site)
 	elif farm.s.zone=="market": boat()
 	elif farm.s.zone=="marsh": draw_marsh()
 	for exit_id in ["west","east"]:
@@ -461,7 +568,7 @@ func _draw() -> void:
 	var actors:Array=[{"id":"hero","p":hero}]
 	for id in positions: actors.append({"id":id,"p":positions[id]})
 	if farm.s.zone=="farm":
-		actors.append({"id":"chest","p":LOCATIONS.farm.box})
+		if farm.s.legacy_box: actors.append({"id":"chest","p":LOCATIONS.farm.box})
 		for site in farm.s.chests: actors.append({"id":"chest","p":site_position(site)})
 	if farm.s.zone=="market": actors.append({"id":"stall","p":LOCATIONS.market.board})
 	actors.sort_custom(func(a,b): return a.p.y<b.p.y)

@@ -59,7 +59,7 @@ func _ready() -> void:
 	hud.add_theme_font_override("font",ui_font)
 	make_hud()
 	update_hud()
-	if not loaded: notify("姨婆留的纸条：后畦蚕豆熟了。头茬嫩，给自己留一碗。",12)
+	if not loaded: notify("短锄按 2，选一格草地开畦。背篓里有种子和两份搭箱的木料。",12)
 
 func plate(bg: Color, border: Color, radius:=5, pad:=8) -> StyleBoxFlat:
 	var box:=StyleBoxFlat.new()
@@ -217,7 +217,7 @@ func update_hud() -> void:
 	clock_label.text="%s　%s%02d　%02d:%02d　%s" % [map.ZONE_NAMES[farm.s.zone],farm.SEASONS[farm.season()],farm.season_day(),t/60,t%60,farm.weather(farm.s.day)]
 	wallet.text="%d 文" % farm.s.coins
 	build_button.text="收起工具" if map.placing!="" else "营造"
-	hint.text="选址 · Esc 收起" if map.placing!="" else ("水量 %d/%d" % [farm.s.water,farm.capacity()] if farm.s.tool=="can" else "E 互动 · 1–5 换工具")
+	hint.text="选格 · Esc 收起" if map.placing!="" else ("水量 %d/%d" % [farm.s.water,farm.capacity()] if farm.s.tool=="can" else "E 互动 · 右键行走")
 	build_button.visible=farm.s.zone=="farm"
 	pack.text="体力　%d/%d" % [farm.s.energy,farm.MAX_ENERGY]
 	energy_bar.value=farm.s.energy
@@ -239,6 +239,7 @@ func _process(dt: float) -> void:
 	marker.visible=map.closest!="" and not map.paused
 	if marker.visible:
 		marker.text="E  "+map.caption(map.closest)
+		if map.nearby.size()>1: marker.text+="　Tab 切换"
 		marker.reset_size()
 		marker.position=map.hero-Vector2(marker.size.x/2,64)
 	if notice_time>0:
@@ -277,12 +278,22 @@ func _unhandled_input(event:InputEvent) -> void:
 			equip(KIT.keys()[event.physical_keycode-KEY_1])
 			return
 		match event.physical_keycode:
+			KEY_TAB: map.cycle_focus()
 			KEY_E,KEY_SPACE:
-				if map.closest!="": interact(map.closest)
+				if map.closest!="" and map.spots.has(map.closest) and map.in_reach(map.closest):
+					map.target=""
+					map.route.clear()
+					map.dest=map.hero
+					interact(map.closest)
 			KEY_B: bag_page()
 			KEY_J: book()
 	if not is_instance_valid(popup) and event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_LEFT:
 		map.point(event.position)
+	if not is_instance_valid(popup) and event is InputEventMouseButton and event.pressed and event.button_index==MOUSE_BUTTON_RIGHT:
+		map.target=""
+		map.dest=map.area(event.position)
+		map.goal=Vector2.INF
+		map.route.clear()
 
 func close_sheet() -> void:
 	epoch+=1
@@ -355,12 +366,24 @@ func action(caption:String,fn:Callable,primary:=false) -> void:
 func interact(id:String) -> void:
 	if is_instance_valid(popup): return
 	if map.placing!="":
+		if map.placing=="reclaim":
+			var site:int=-1
+			if id.begins_with("plot"): site=farm.s.plots[int(id.trim_prefix("plot"))].site
+			elif id.begins_with("chest"): site=int(id.trim_prefix("chest"))
+			elif id!="box": return
+			notify(farm.reclaim(site))
+			map.refresh_navigation()
+			map.set_placement("")
+			persist()
+			return
 		if id.begins_with("site"):
 			var site:=int(id.trim_prefix("site"))
 			var was_free:bool=farm.free_site(site)
 			var message:String=farm.build(map.placing,site)
 			if was_free and not farm.free_site(site):
 				sfx.note(270,0.22)
+				map.refresh_navigation()
+				map.hero=map.area(map.hero)
 				map.set_placement("")
 				persist()
 			notify(message)
@@ -406,7 +429,7 @@ func interact(id:String) -> void:
 					persist()
 					close_sheet()
 					notify(msg),true)
-		"angler": start_fishing()
+		"angler","bank": start_fishing()
 		"greens_a","greens_b":
 			notify(farm.forage(id))
 			persist()
@@ -459,19 +482,24 @@ func construction() -> void:
 		map.set_placement("")
 		return
 	sheet("院里营造","construction")
-	var empty:int=farm.YARD_SITES.size()-farm.s.plots.size()-farm.s.chests.size()
+	var empty:int=farm.YARD_COLS*farm.YARD_ROWS-farm.s.plots.size()-farm.s.chests.size()
 	para("菜畦 %d 块　·　空草地 %d 块" % [farm.s.plots.size(),empty])
 	if empty==0:
 		para("这片院地已用满。")
-		return
 	for kind in farm.BUILD:
+		if empty==0: break
 		var spec:Dictionary=farm.BUILD[kind]
 		var cost:="木料 %d 份 · " % spec.wood if spec.wood else ""
 		action("%s　%s%d 分钟" % [spec.name,cost,spec.minutes],func():
 			close_sheet()
 			map.set_placement(kind)
-			notify("点一块带角标的草地，选址建"+spec.name+"。"))
-	para("田头出货箱与门前的木箱共用晚船货单。背篓中有木料 %d 份。" % farm.s.bag.wood,14)
+			notify("点院内草地选址建"+spec.name+"。"))
+	if farm.s.legacy_box or not farm.s.plots.is_empty() or not farm.s.chests.is_empty():
+		action("平整空畦 / 拆收出货箱",func():
+			close_sheet()
+			map.set_placement("reclaim")
+			notify("选择空畦或出货箱。箱板会退回背篓。"))
+	para("各处出货箱共用晚船货单。背篓中有木料 %d 份。" % farm.s.bag.wood,14)
 
 func home() -> void:
 	sheet("姨婆的农舍","home")
@@ -490,6 +518,7 @@ func home() -> void:
 func sleep_night() -> void:
 	var previous:bool=farm.s.ferry
 	var receipt:String=farm.night()
+	map.clock=0
 	map.travel("farm",Vector2(235,220))
 	persist()
 	close_sheet()

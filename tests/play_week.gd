@@ -17,6 +17,12 @@ func check(expr:bool, label:String) -> void:
 
 func play() -> void:
 	tmp="user://qa-"+str(Time.get_ticks_usec())+".json"
+	var inherited=preload("res://scripts/farm.gd").new()
+	inherited.s.version=2
+	inherited.s.erase("legacy_box")
+	inherited.s.bag.wood=0
+	for i in 6: inherited.s.plots.append({"site":inherited.LEGACY_START[i],"item":"bean" if i<3 else "","age":2 if i<3 else 0,"wet":false})
+	inherited.save_to(tmp)
 	game=Town.new()
 	game.save_path=tmp
 	root.add_child(game)
